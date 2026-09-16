@@ -81,6 +81,50 @@ test('hostname normalization decodes only current unreserved escapes', (t) => {
   t.end()
 })
 
+test('scheme-relative hostname normalization folds decoded ASCII case', (t) => {
+  const encodedHost = '//%41.com'
+  const normalizedHost = fastURI.normalize(encodedHost)
+  const encodedMetadata = '//%4Detadata.internal/private'
+  const literalMetadata = '//metadata.internal/private'
+
+  t.equal(fastURI.parse(encodedHost).host, 'a.com', 'parse folds an encoded uppercase host letter')
+  t.equal(normalizedHost, '//a.com', 'normalize emits a lowercase host')
+  t.equal(fastURI.normalize(normalizedHost), normalizedHost, 'host normalization is idempotent')
+  t.equal(fastURI.equal(encodedHost, '//a.com'), true, 'encoded and literal host spellings compare equal')
+  t.equal(fastURI.equal(encodedMetadata, literalMetadata), true, 'encoded metadata host compares equal')
+  t.equal(
+    fastURI.resolve('x://trusted.example/', encodedMetadata),
+    fastURI.resolve('x://trusted.example/', literalMetadata),
+    'encoded and literal metadata hosts resolve identically'
+  )
+  t.equal(
+    fastURI.normalize('//example.com%2fpath'),
+    '//example.com%2Fpath',
+    'reserved host escapes remain encoded with uppercase hex'
+  )
+  t.equal(fastURI.normalize('//%2541.com'), '//%2541.com', 'nested host escapes are not decoded twice')
+  // `equal()` compares case-insensitively here, so the components that must stay
+  // case-sensitive are pinned through `normalize()` instead: only the host folds.
+  t.equal(fastURI.normalize('//User@%41.com/path'), '//User@a.com/path', 'userinfo remains case-sensitive')
+  t.equal(fastURI.normalize('//%41.com/Path'), '//a.com/Path', 'path remains case-sensitive')
+  t.equal(fastURI.normalize('//%41.com/?Token=Value'), '//a.com/?Token=Value', 'query remains case-sensitive')
+  t.equal(fastURI.normalize('//%41.com/#Frag'), '//a.com/#Frag', 'fragment remains case-sensitive')
+  t.end()
+})
+
+test('host normalization applies to schemes that skip path normalization', (t) => {
+  const encodedHost = 'mailto://%41.com'
+  const literalHost = 'mailto://a.com'
+
+  t.equal(fastURI.parse(encodedHost).host, fastURI.parse(literalHost).host, 'parse results have consistent hosts')
+  t.equal(fastURI.normalize(encodedHost), fastURI.normalize(literalHost), 'normalize results are consistent')
+  t.equal(fastURI.equal(encodedHost, literalHost), true, 'encoded and literal hosts compare equal')
+  // `urn` is the registered handler that sets `skipNormalize`, so it pins the
+  // host fold for a scheme that really does opt out of path normalization.
+  t.equal(fastURI.parse('urn://%41.com').host, 'a.com', 'a skipNormalize scheme still folds its host')
+  t.end()
+})
+
 test('host conversion failures are not treated as comparable URLs', (t) => {
   const malformedHost = 'http://trusted.test%2540evil.test/'
 
